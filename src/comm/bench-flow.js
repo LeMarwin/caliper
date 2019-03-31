@@ -20,6 +20,7 @@ const Report  = require('./report.js');
 const Client  = require('./client/client.js');
 const Util = require('./util.js');
 const logger = Util.getLogger('bench-flow.js');
+const config = require('./config-util.js');
 let blockchain, monitor, report, client;
 let success = 0, failure = 0;
 let resultsbyround = [];    // results table for each test round
@@ -33,7 +34,6 @@ let absCaliperDir = path.join(__dirname, '..', '..');
  * Generate mustache template for test report
  */
 function createReport() {
-    //let config = require(absConfigFile);
     let config = Util.parseYaml(absConfigFile);
     report  = new Report();
     report.addMetadata('DLT', blockchain.gettype());
@@ -54,6 +54,8 @@ function createReport() {
         for(let i = 0 ; i < config.test.rounds.length ; i++) {
             if(config.test.rounds[i].hasOwnProperty('txNumber')) {
                 r += config.test.rounds[i].txNumber.length;
+            } else if (config.test.rounds[i].hasOwnProperty('txDuration')) {
+                r += config.test.rounds[i].txDuration.length;
             }
         }
         report.addMetadata('Test Rounds', r);
@@ -64,12 +66,14 @@ function createReport() {
         report.addMetadata('Test Rounds', ' ');
     }
 
-    let sut = require(absNetworkFile);
+    let sut = Util.parseYaml(absNetworkFile);
     if(sut.hasOwnProperty('info')) {
         for(let key in sut.info) {
             report.addSUTInfo(key, sut.info[key]);
         }
     }
+
+    report.addLabelDescriptionMap(config.test.rounds);
 }
 
 /**
@@ -184,12 +188,12 @@ function processResult(results, label){
         logger.info('###test result:###');
         printTable(resultTable);
         let idx = report.addBenchmarkRound(label);
-        report.setRoundPerformance(idx, resultTable);
+        report.setRoundPerformance(label, idx, resultTable);
         let resourceTable = monitor.getDefaultStats();
         if(resourceTable.length > 0) {
             logger.info('### resource stats ###');
             printTable(resourceTable);
-            report.setRoundResource(idx, resourceTable);
+            report.setRoundResource(label, idx, resourceTable);
         }
         return Promise.resolve();
     }
@@ -221,7 +225,7 @@ async function defaultTest(args, clientArgs, final) {
             trim: args.trim ? args.trim : 0,
             args: args.arguments,
             cb  : args.callback,
-            config: configPath,
+            config: configPath
         };
         // condition for time based or number based test driving
         if (args.txNumber) {
@@ -330,15 +334,21 @@ module.exports.run = async function(configFile, networkFile) {
 
     //let configObject = require(absConfigFile);
     let configObject = Util.parseYaml(absConfigFile);
-    let networkObject = require(absNetworkFile);
+    let networkObject = Util.parseYaml(absNetworkFile);
+
+    let skipStart = config.getConfigSetting('core:skipStartScript', false);
+    let skipEnd = config.getConfigSetting('core:skipEndScript', false);
+    skipStart = skipStart === true || skipStart === 'true';
+    skipEnd = skipEnd === true || skipEnd === 'true';
 
     try {
         if (networkObject.hasOwnProperty('caliper') && networkObject.caliper.hasOwnProperty('command') && networkObject.caliper.command.hasOwnProperty('start')) {
             if (!networkObject.caliper.command.start.trim()) {
                 throw new Error('Start command is specified but it is empty');
             }
-
-            await execAsync(networkObject.caliper.command.start);
+            if(!skipStart){
+                await execAsync(networkObject.caliper.command.start);
+            }
         }
 
         await blockchain.init();
@@ -383,8 +393,9 @@ module.exports.run = async function(configFile, networkFile) {
             if (!networkObject.caliper.command.end.trim()) {
                 logger.error('End command is specified but it is empty');
             } else {
-
-                await execAsync(networkObject.caliper.command.end);
+                if(!skipEnd){
+                    await execAsync(networkObject.caliper.command.end);
+                }
             }
         }
 

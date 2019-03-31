@@ -506,7 +506,6 @@ async function instantiateLegacy(chaincode, endorsement_policy, upgrade){
         }
     }
 
-    // an event listener can only register with a peer in its own org
     data = fs.readFileSync(commUtils.resolvePath(ORGS[userOrg][eventPeer].tls_cacerts));
     let eh = client.newEventHub();
     eh.setPeerAddr(
@@ -562,7 +561,7 @@ async function instantiateLegacy(chaincode, endorsement_policy, upgrade){
             let one_good = false;
             if (proposalResponses[i].response && proposalResponses[i].response.status === 200) {
                 one_good = true;
-            /*} else if (proposalResponses && proposalResponses[i] && proposalResponses[i].code === 2){
+                /*} else if (proposalResponses && proposalResponses[i] && proposalResponses[i].code === 2){
                 if (proposalResponses[i].details && proposalResponses[i].details.indexOf('exists') !== -1) {
                     one_good = true;
                     instantiated = true;
@@ -1251,6 +1250,7 @@ async function submitTransaction(context, args){
         invokeStatus.SetStatusSuccess();
         return invokeStatus;
     } catch (err) {
+        commLogger.error('failed to submit transaction using args [' + JSON.stringify(args) +'], with error: ' + (err instanceof Error ? err.stack : err));
         invokeStatus.SetStatusFail();
         invokeStatus.result = [];
         return Promise.resolve(invokeStatus);
@@ -1258,12 +1258,12 @@ async function submitTransaction(context, args){
 }
 
 /**
- * Executes a the given chaincode function with the specified options; this will not append to the ledger
+ * Evaluates the given chaincode function with the specified options; this will not append to the ledger
  * @param {object} context The Fabric context.
  * @param {string[]} args The arguments to pass to the chaincode.
  * @return {Promise<TxStatus>} The result and stats of the transaction invocation.
  */
-async function executeTransaction(context, args){
+async function evaluateTransaction(context, args){
     const TxErrorEnum = require('./constant.js').TxErrorEnum;
     const txIdObject = context.gateway.client.newTransactionID();
     const txId = txIdObject.getTransactionID().toString();
@@ -1278,11 +1278,12 @@ async function executeTransaction(context, args){
     }
 
     try {
-        const result = await context.contract.executeTransaction(...args);
+        const result = await context.contract.evaluateTransaction(...args);
         invokeStatus.result = result;
         invokeStatus.SetStatusSuccess();
         return invokeStatus;
     } catch (err) {
+        commLogger.error('failed to evaluate transaction using args [' + JSON.stringify(args) +'], with error: ' + (err instanceof Error ? err.stack : err));
         invokeStatus.SetStatusFail();
         invokeStatus.result = [];
         return Promise.resolve(invokeStatus);
@@ -1300,4 +1301,4 @@ module.exports.tlsEnroll = tlsEnroll;
 module.exports.createInMemoryWallet = createInMemoryWallet;
 module.exports.retrieveGateway = retrieveGateway;
 module.exports.submitTransaction = submitTransaction;
-module.exports.executeTransaction = executeTransaction;
+module.exports.evaluateTransaction = evaluateTransaction;
