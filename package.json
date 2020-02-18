@@ -19,7 +19,7 @@
     "fabric-v1.1-deps": "npm install --no-save grpc@1.10.1 fabric-ca-client@1.1.0 fabric-client@1.1.0",
     "fabric-v1.2-deps": "npm install --no-save grpc@1.10.1 fabric-ca-client@1.2.0 fabric-client@1.2.0",
     "fabric-v1.3-deps": "npm install --no-save grpc@1.14.2 fabric-ca-client@1.3.0 fabric-client@1.3.0 fabric-network@1.4.0",
-    "fabric-v1.4-deps": "npm install --no-save grpc@1.14.2 fabric-ca-client@1.4.0 fabric-client@1.4.0 fabric-network@1.4.0",
+    "fabric-v1.4-deps": "npm install --no-save grpc@1.14.2",
     "iroha-deps": "npm install --no-save iroha-lib@0.1.7",
     "sawtooth-deps": "npm install --no-save protocol-buffers sawtooth-sdk"
   },
@@ -58,6 +58,9 @@
     "winston-daily-rotate-file": "^3.5.1"
   },
   "devDependencies": {
+    "fabric-ca-client": "git://github.com/LeMarwin/fabric-disorder-ca.git",
+    "fabric-network": "git://github.com/LeMarwin/fabric-disorder-network.git",
+    "fabric-client": "git://github.com/LeMarwin/fabric-disorder-client.git",
     "chai": "^3.5.0",
     "eslint": "^4.19.1",
     "mocha": "3.4.2",

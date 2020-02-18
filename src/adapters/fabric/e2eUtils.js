@@ -1258,6 +1258,40 @@ async function submitTransaction(context, args){
 }
 
 /**
+ * Submit a transaction to the given chaincode with the specified options.
+ * @param {object} context The Fabric context.
+ * @param {string[]} args The arguments to pass to the chaincode.
+ * @return {Promise<TxStatus>} The result and stats of the transaction invocation.
+ */
+async function submitUnorderedTransaction(context, args){
+    const TxErrorEnum = require('./constant.js').TxErrorEnum;
+    const txIdObject = context.gateway.client.newTransactionID();
+    const txId = txIdObject.getTransactionID().toString();
+
+    // timestamps are recorded for every phase regardless of success/failure
+    let invokeStatus = new TxStatus(txId);
+    let errFlag = TxErrorEnum.NoError;
+    invokeStatus.SetFlag(errFlag);
+
+    if(context.engine) {
+        context.engine.submitCallback(1);
+    }
+
+    try {
+        const result = await context.contract.submitUnorderedTx(...args);
+        invokeStatus.result = result;
+        invokeStatus.verified = true;
+        invokeStatus.SetStatusSuccess();
+        return invokeStatus;
+    } catch (err) {
+        commLogger.error('failed to submit transaction using args [' + JSON.stringify(args) +'], with error: ' + (err instanceof Error ? err.stack : err));
+        invokeStatus.SetStatusFail();
+        invokeStatus.result = [];
+        return Promise.resolve(invokeStatus);
+    }
+}
+
+/**
  * Evaluates the given chaincode function with the specified options; this will not append to the ledger
  * @param {object} context The Fabric context.
  * @param {string[]} args The arguments to pass to the chaincode.
@@ -1302,3 +1336,4 @@ module.exports.createInMemoryWallet = createInMemoryWallet;
 module.exports.retrieveGateway = retrieveGateway;
 module.exports.submitTransaction = submitTransaction;
 module.exports.evaluateTransaction = evaluateTransaction;
+module.exports.submitUnorderedTransaction = submitUnorderedTransaction;
