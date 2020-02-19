@@ -2027,10 +2027,6 @@ class Fabric extends BlockchainInterface {
 
             invokeStatus.SetStatusSuccess(Date.now());
 
-            //////////////////////////////
-            // PROCESSING EVENT RESULTS //
-            //////////////////////////////
-
         } catch (err) {
             invokeStatus.SetStatusFail();
 
@@ -2262,7 +2258,7 @@ class Fabric extends BlockchainInterface {
                 settings.invokerIdentity = this.defaultInvoker;
             }
 
-            promises.push(this._submitSingleTransaction(context, settings, timeout * 1000));
+            promises.push(this._submitSingleTransactionUnordered(context, settings, timeout * 1000));
         }
 
         return await Promise.all(promises);
