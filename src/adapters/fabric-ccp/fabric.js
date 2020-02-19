@@ -1799,6 +1799,257 @@ class Fabric extends BlockchainInterface {
         return invokeStatus;
     }
 
+    /**
+     * Invokes the specified chaincode according to the provided settings.
+     *
+     * @param {object} context The context previously created by the Fabric adapter.
+     * @param {ChaincodeInvokeSettings} invokeSettings The settings associated with the transaction submission.
+     * @param {number} timeout The timeout for the whole transaction life-cycle in milliseconds.
+     * @return {Promise<TxStatus>} The result and stats of the transaction invocation.
+     */
+    async _submitSingleTransactionUnordered(context, invokeSettings, timeout) {
+        // note start time to adjust the timeout parameter later
+        const startTime = Date.now();
+        this.txIndex++; // increase the counter
+
+        // NOTE: since this function is a hot path, there aren't any assertions for the sake of efficiency
+
+        // retrieve the necessary client/admin profile
+        let invoker;
+        let admin = false;
+
+        if (invokeSettings.invokerIdentity.startsWith('#')) {
+            invoker = this.adminProfiles.get(invokeSettings.invokerIdentity.substring(1));
+            admin = true;
+        } else {
+            invoker = this.clientProfiles.get(invokeSettings.invokerIdentity);
+        }
+
+        // this hints at an error originating from the outside, so it should terminate
+        if (!invoker) {
+            throw Error(`Invoker ${invokeSettings.invokerIdentity} not found!`);
+        }
+
+        ////////////////////////////////
+        // PREPARE SOME BASIC OBJECTS //
+        ////////////////////////////////
+
+        const txIdObject = invoker.newTransactionID(admin);
+        const txId = txIdObject.getTransactionID();
+
+        // timestamps are recorded for every phase regardless of success/failure
+        let invokeStatus = new TxStatus(txId);
+        invokeStatus.Set('request_type', 'transaction');
+
+        let errors = []; // errors are collected during response validations
+
+        ////////////////////////////////
+        // SEND TRANSACTION PROPOSALS //
+        ////////////////////////////////
+
+        let targetPeers = invokeSettings.targetPeers ||
+            this._assembleRandomTargetPeers(invokeSettings.channel, invokeSettings.chaincodeId, invokeSettings.chaincodeVersion);
+
+        /** @link{ChaincodeInvokeRequest} */
+        const proposalRequest = {
+            chaincodeId: invokeSettings.chaincodeId,
+            fcn: invokeSettings.chaincodeFunction,
+            args: invokeSettings.chaincodeArguments || [],
+            txId: txIdObject,
+            transientMap: invokeSettings.transientMap,
+            targets: targetPeers
+        };
+
+        let channel = invoker.getChannel(invokeSettings.channel, true);
+
+        /** @link{ProposalResponseObject} */
+        let proposalResponseObject = null;
+
+        // NOTE: everything happens inside a try-catch
+        // no exception should escape, transaction failures have to be handled gracefully
+        try {
+            if (context.engine) {
+                context.engine.submitCallback(1);
+            }
+            try {
+                // account for the elapsed time up to this point
+                proposalResponseObject = await channel.sendTransactionProposal(proposalRequest,
+                    this._getRemainingTimeout(startTime, timeout));
+
+                invokeStatus.Set('time_endorse', Date.now());
+            } catch (err) {
+                invokeStatus.Set('time_endorse', Date.now());
+                invokeStatus.Set('proposal_error', err.message);
+
+                // error occurred, early life-cycle termination, definitely failed
+                invokeStatus.SetVerification(true);
+
+                errors.push(err);
+                throw errors; // handle every logging in one place at the end
+            }
+
+            //////////////////////////////////
+            // CHECKING ENDORSEMENT RESULTS //
+            //////////////////////////////////
+
+            /** @link{Array<ProposalResponse>} */
+            const proposalResponses = proposalResponseObject[0];
+            /** @link{Proposal} */
+            const proposal = proposalResponseObject[1];
+
+            // NOTES: filter inside, so we have accurate indices corresponding to the original target peers
+            proposalResponses.forEach((value, index) => {
+                let targetName = targetPeers[index];
+
+                // Errors from peers/chaincode are returned as an Error object
+                if (value instanceof Error) {
+                    invokeStatus.Set(`proposal_response_error_${targetName}`, value.message);
+
+                    // explicit rejection, early life-cycle termination, definitely failed
+                    invokeStatus.SetVerification(true);
+                    errors.push(new Error(`Proposal response error by ${targetName}: ${value.message}`));
+                    return;
+                }
+
+                /** @link{ProposalResponse} */
+                let proposalResponse = value;
+
+                // save a chaincode results/response
+                // NOTE: the last one will be kept as result
+                invokeStatus.SetResult(proposalResponse.response.payload);
+                invokeStatus.Set(`endorsement_result_${targetName}`, proposalResponse.response.payload);
+
+                // verify the endorsement signature and identity if configured
+                if (this.configVerifyProposalResponse) {
+                    if (!channel.verifyProposalResponse(proposalResponse)) {
+                        invokeStatus.Set(`endorsement_verify_error_${targetName}`, 'INVALID');
+
+                        // explicit rejection, early life-cycle termination, definitely failed
+                        invokeStatus.SetVerification(true);
+                        errors.push(new Error(`Couldn't verify endorsement signature or identity of ${targetName}`));
+                        return;
+                    }
+                }
+
+                /** @link{ResponseObject} */
+                let responseObject = proposalResponse.response;
+
+                if (responseObject.status !== 200) {
+                    invokeStatus.Set(`endorsement_result_error_${targetName}`, `${responseObject.status} ${responseObject.message}`);
+
+                    // explicit rejection, early life-cycle termination, definitely failed
+                    invokeStatus.SetVerification(true);
+                    errors.push(new Error(`Endorsement denied by ${targetName}: ${responseObject.message}`));
+                }
+            });
+
+            // if there were errors, stop further processing, jump to the end
+            if (errors.length > 0) {
+                throw errors;
+            }
+
+            if (this.configVerifyReadWriteSets) {
+                // check all the read/write sets to see if they're the same
+                if (!channel.compareProposalResponseResults(proposalResponses)) {
+                    invokeStatus.Set('read_write_set_error', 'MISMATCH');
+
+                    // r/w set mismatch, early life-cycle termination, definitely failed
+                    invokeStatus.SetVerification(true);
+                    errors.push(new Error('Read/Write set mismatch between endorsements'));
+                    throw errors;
+                }
+            }
+
+            /////////////////////////////////
+            // REGISTERING EVENT LISTENERS //
+            /////////////////////////////////
+
+            // let eventPromises = []; // to wait for every event response
+            //
+            // // NOTE: in compatibility mode, the same EventHub can be used for multiple channels
+            // // if the peer is part of multiple channels
+            // this.channelEventSourcesCache.get(invokeSettings.channel).forEach((eventSource) => {
+            //     eventPromises.push(this._createEventRegistrationPromise(eventSource,
+            //         txId, invokeStatus, startTime, timeout));
+            // });
+
+            ///////////////////////////////////////////
+            // SUBMITTING TRANSACTION TO THE PEERS   //
+            ///////////////////////////////////////////
+
+            /** @link{TransactionRequest} */
+            const transactionRequest = {
+                proposalResponses: proposalResponses,
+                proposal: proposal
+            };
+
+            /** @link{BroadcastResponse} */
+            let broadcastResponse;
+            try {
+                // wrap it in a Promise to add explicit timeout to the call
+                let responsePromise = new Promise(async (resolve, reject) => {
+                    let timeoutHandle = setTimeout(() => {
+                        reject(new Error('TIMEOUT'));
+                    }, this._getRemainingTimeout(startTime, timeout));
+
+                    let result = await channel.sendUnorderedTransaction(transactionRequest);
+                    clearTimeout(timeoutHandle);
+                    resolve(result);
+                });
+
+                broadcastResponse = await responsePromise;
+            } catch (err) {
+                // missing the ACK does not mean anything, the Tx could be already under ordering
+                // so let the events decide the final status, but log this error
+                invokeStatus.Set('broadcast_error', err.message);
+                logger.warn(`Broadcast error: ${err.message}`);
+            }
+
+            // eslint-disable-next-line no-unused-vars
+            const finResults = broadcastResponse.filter(resp => {
+                let flag = true;
+                if (resp.status === 'fulfilled') {
+                    if (resp.value.response.status !== 200) {
+                        const msg = util.format('Failed to commit transaction %j to peer %j. Response status: %j', txId, resp.peer.name, resp.response.status);
+                        logger.error('submit:', msg);
+                        flag = false;
+                    }
+                } else {
+                    const msg = util.format('Failed to commit transaction %j to one of the peers. Promise is rejected', txId);
+                    logger.error('submit:', msg);
+                    flag = false;
+                }
+                return flag;
+            }).map(resp => {
+                return resp.value;
+            })
+            // return finResults;
+
+            invokeStatus.SetStatusSuccess(Date.now());
+
+            //////////////////////////////
+            // PROCESSING EVENT RESULTS //
+            //////////////////////////////
+
+        } catch (err) {
+            invokeStatus.SetStatusFail();
+
+            // not the expected error array was thrown, an unexpected error occurred, log it with stack if available
+            if (!Array.isArray(err)) {
+                invokeStatus.Set('unexpected_error', err.message);
+                logger.error(`Transaction[${txId.substring(0, 10)}] unexpected error: ${err.stack ? err.stack : err}`);
+            } else if (err.length > 0) {
+                let logMsg = `Transaction[${txId.substring(0, 10)}] life-cycle errors:`;
+                for (let execError of err) {
+                    logMsg += `\n\t- ${execError.message}`;
+                }
+
+                logger.error(logMsg);
+            }
+        }
+        return invokeStatus;
+    }
+
     //////////////////////////
     // PUBLIC API FUNCTIONS //
     //////////////////////////
@@ -1976,7 +2227,46 @@ class Fabric extends BlockchainInterface {
 
         return await Promise.all(promises);
     }
+    /**
+     * Invokes the specified chaincode according to the provided settings.
+     *
+     * @param {object} context The context previously created by the Fabric adapter.
+     * @param {string} contractID The unique contract ID of the target chaincode.
+     * @param {string} contractVersion Unused.
+     * @param {ChaincodeInvokeSettings|ChaincodeInvokeSettings[]} invokeSettings The settings (collection) associated with the (batch of) transactions to submit.
+     * @param {number} timeout The timeout for the whole transaction life-cycle in seconds.
+     * @return {Promise<TxStatus[]>} The result and stats of the transaction invocation.
+     */
+    async invokeSmartContractUnordered(context, contractID, contractVersion, invokeSettings, timeout) {
+        timeout = timeout || this.configDefaultTimeout;
+        let promises = [];
+        let settingsArray;
 
+        if (!Array.isArray(invokeSettings)) {
+            settingsArray = [invokeSettings];
+        } else {
+            settingsArray = invokeSettings;
+        }
+
+        for (let settings of settingsArray) {
+            let contractDetails = this.networkUtil.getContractDetails(contractID);
+            if (!contractDetails) {
+                throw new Error(`Could not find details for contract ID ${contractID}`);
+            }
+
+            settings.channel = contractDetails.channel;
+            settings.chaincodeId = contractDetails.id;
+            settings.chaincodeVersion = contractDetails.version;
+
+            if (!settings.invokerIdentity) {
+                settings.invokerIdentity = this.defaultInvoker;
+            }
+
+            promises.push(this._submitSingleTransaction(context, settings, timeout * 1000));
+        }
+
+        return await Promise.all(promises);
+    }
     /**
      * Queries the specified chaincode according to the provided settings.
      *
