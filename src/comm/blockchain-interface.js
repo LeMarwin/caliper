@@ -84,6 +84,18 @@ class BlockchainInterface {
     }
 
     /**
+     * Invoke a smart contract
+     * @param {Object} context context object
+     * @param {String} contractID identity of the contract
+     * @param {String} contractVer version of the contract
+     * @param {Array} args array of JSON formatted arguments for multiple transactions
+     * @param {Number} timeout request timeout, in second
+     */
+    async invokeSmartContractUnordered(context, contractID, contractVer, args, timeout) {
+        throw new Error('invokeSmartContractUnordered is not implemented for this blockchain system');
+    }
+
+    /**
      * Query state from the ledger
      * @param {Object} context context object from getContext
      * @param {String} contractID identity of the contract

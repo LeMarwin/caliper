@@ -150,6 +150,37 @@ class Blockchain {
     }
 
     /**
+     * Invoke smart contract/submit transactions and return corresponding transactions' status
+     * @param {Object} context context object
+     * @param {String} contractID identiy of the contract
+     * @param {String} contractVer version of the contract
+     * @param {Array} args array of JSON formatted arguments for multiple transactions
+     * @param {Number} timeout request timeout, in second
+     * @return {Promise} txStatus object or an array of txStatus objects
+     */
+    async invokeSmartContractUnordered(context, contractID, contractVer, args, timeout) {
+        let arg, time;    // compatible with old version
+        if(Array.isArray(args)) {
+            arg = args;
+        }
+        else if(typeof args === 'object') {
+            arg = [args];
+        }
+        else {
+            throw new Error('Invalid args for invokeSmartContract()');
+        }
+
+        if(typeof timeout !== 'number' || timeout < 0) {
+            time = 120;
+        }
+        else {
+            time = timeout;
+        }
+
+        return await this.bcObj.invokeSmartContractUnordered(context, contractID, contractVer, arg, time);
+    }
+
+    /**
      * Query state from the ledger
      * @param {Object} context context object from getContext
      * @param {String} contractID identiy of the contract
