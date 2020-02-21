@@ -1963,17 +1963,17 @@ class Fabric extends BlockchainInterface {
             let broadcastResponse;
             try {
                 // wrap it in a Promise to add explicit timeout to the call
-                let responsePromise = new Promise(async (resolve, reject) => {
-                    let timeoutHandle = setTimeout(() => {
-                        reject(new Error('TIMEOUT'));
-                    }, this._getRemainingTimeout(startTime, timeout));
+                // let responsePromise = new Promise(async (resolve, reject) => {
+                //     let timeoutHandle = setTimeout(() => {
+                //         reject(new Error('TIMEOUT'));
+                //     }, this._getRemainingTimeout(startTime, timeout));
+                //
+                //     let result = await channel.sendUnorderedTransaction(transactionRequest);
+                //     clearTimeout(timeoutHandle);
+                //     resolve(result);
+                // });
 
-                    let result = await channel.sendUnorderedTransaction(transactionRequest);
-                    clearTimeout(timeoutHandle);
-                    resolve(result);
-                });
-
-                broadcastResponse = await responsePromise;
+                broadcastResponse = await channel.sendUnorderedTransaction(transactionRequest);
             } catch (err) {
                 // missing the ACK does not mean anything, the Tx could be already under ordering
                 // so let the events decide the final status, but log this error
@@ -1998,7 +1998,7 @@ class Fabric extends BlockchainInterface {
                 return flag;
             }).map(resp => {
                 return resp.value;
-            })
+            });
             // return finResults;
 
             invokeStatus.SetStatusSuccess(Date.now());
