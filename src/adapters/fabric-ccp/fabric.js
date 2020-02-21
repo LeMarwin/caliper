@@ -1675,17 +1675,18 @@ class Fabric extends BlockchainInterface {
                 throw errors;
             }
 
-            if (this.configVerifyReadWriteSets) {
-                // check all the read/write sets to see if they're the same
-                if (!channel.compareProposalResponseResults(proposalResponses)) {
-                    invokeStatus.Set('read_write_set_error', 'MISMATCH');
-
-                    // r/w set mismatch, early life-cycle termination, definitely failed
-                    invokeStatus.SetVerification(true);
-                    errors.push(new Error('Read/Write set mismatch between endorsements'));
-                    throw errors;
-                }
-            }
+            // Skip this step, since rw-sets are almost always inconsistent in the new model
+            // if (this.configVerifyReadWriteSets) {
+            //     // check all the read/write sets to see if they're the same
+            //     if (!channel.compareProposalResponseResults(proposalResponses)) {
+            //         invokeStatus.Set('read_write_set_error', 'MISMATCH');
+            //
+            //         // r/w set mismatch, early life-cycle termination, definitely failed
+            //         invokeStatus.SetVerification(true);
+            //         errors.push(new Error('Read/Write set mismatch between endorsements'));
+            //         throw errors;
+            //     }
+            // }
 
             /////////////////////////////////
             // REGISTERING EVENT LISTENERS //
@@ -1947,31 +1948,6 @@ class Fabric extends BlockchainInterface {
             if (errors.length > 0) {
                 throw errors;
             }
-
-            if (this.configVerifyReadWriteSets) {
-                // check all the read/write sets to see if they're the same
-                if (!channel.compareProposalResponseResults(proposalResponses)) {
-                    invokeStatus.Set('read_write_set_error', 'MISMATCH');
-
-                    // r/w set mismatch, early life-cycle termination, definitely failed
-                    invokeStatus.SetVerification(true);
-                    errors.push(new Error('Read/Write set mismatch between endorsements'));
-                    throw errors;
-                }
-            }
-
-            /////////////////////////////////
-            // REGISTERING EVENT LISTENERS //
-            /////////////////////////////////
-
-            // let eventPromises = []; // to wait for every event response
-            //
-            // // NOTE: in compatibility mode, the same EventHub can be used for multiple channels
-            // // if the peer is part of multiple channels
-            // this.channelEventSourcesCache.get(invokeSettings.channel).forEach((eventSource) => {
-            //     eventPromises.push(this._createEventRegistrationPromise(eventSource,
-            //         txId, invokeStatus, startTime, timeout));
-            // });
 
             ///////////////////////////////////////////
             // SUBMITTING TRANSACTION TO THE PEERS   //

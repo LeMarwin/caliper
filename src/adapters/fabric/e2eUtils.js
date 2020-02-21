@@ -1077,22 +1077,23 @@ async function invokebycontext(context, id, version, args, timeout){
             allGood = allGood && one_good;
         }
 
-        if (allGood) {
-            // check all the read/write sets to see if the same, verify that each peer
-            // got the same results on the proposal
-            //let beforeInvokeTime = Date.now()
-            allGood = channel.compareProposalResponseResults(proposalResponses);
-            //invokeStatus.Set('invokeLatency', (Date.now() - beforeInvokeTime));
-            if (!allGood) {
-                let err = new Error('Read/Write set mismatch between endorsements');
-                errFlag |= TxErrorEnum.BadProposalResponseError;
-                invokeStatus.SetFlag(errFlag);
-                invokeStatus.SetErrMsg(TxErrorIndex.BadProposalResponseError, err.toString());
-                // r/w set mismatch, early life-cycle termination, definitely failed
-                invokeStatus.SetVerification(true);
-                throw err;
-            }
-        }
+        // Skip this step, since rw-sets are almost always inconsistent in the new model
+        // if (allGood) {
+        //     // check all the read/write sets to see if the same, verify that each peer
+        //     // got the same results on the proposal
+        //     //let beforeInvokeTime = Date.now()
+        //     allGood = channel.compareProposalResponseResults(proposalResponses);
+        //     //invokeStatus.Set('invokeLatency', (Date.now() - beforeInvokeTime));
+        //     if (!allGood) {
+        //         let err = new Error('Read/Write set mismatch between endorsements');
+        //         errFlag |= TxErrorEnum.BadProposalResponseError;
+        //         invokeStatus.SetFlag(errFlag);
+        //         invokeStatus.SetErrMsg(TxErrorIndex.BadProposalResponseError, err.toString());
+        //         // r/w set mismatch, early life-cycle termination, definitely failed
+        //         invokeStatus.SetVerification(true);
+        //         throw err;
+        //     }
+        // }
 
         invokeStatus.SetResult(proposalResponses[0].response.payload);
 
